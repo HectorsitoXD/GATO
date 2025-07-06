@@ -1,0 +1,22 @@
+{
+  "name": "gato",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js",
+    "dev": "cd client && vite"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^5.1.0",
+    "phaser3-rex-plugins": "^1.80.16",
+    "socket.io": "^4.8.1"
+  },
+  "description": "",
+  "devDependencies": {
+    "vite": "^7.0.0"
+  }
+}
