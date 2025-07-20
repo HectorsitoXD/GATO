@@ -11,7 +11,7 @@ export class DeckStack {
         this.counter = new Button(scene, deckConfig.X - pos.Y(9), deckConfig.Y - pos.Y(9), pos.Y(6), pos.Y(6), uiConfig.COLOR, deckConfig.LENGTH, pos.Y(3), 'bold', 'white');
 
         for (let i = 0; i < deckConfig.LENGTH; i ++) {
-            this.push(new Card(scene, deckConfig.X, deckConfig.Y, cardConfig.SCALE, null, false));
+            this.push(new Card(scene, deckConfig.X, deckConfig.Y, cardConfig.SCALE, null, 'deck', false));
         }
 
         this.setDragEvents();
@@ -19,42 +19,56 @@ export class DeckStack {
 
     }
 
+    /*  TODO:
+        Fix drag events, it is important to take the top card out of the array once you click it to avoid
+        cases where the card gets drawn to another player or to the player itself after having been peeked.
+        Currently quite buggy, fix it >:(
+    */
+
     setDragEvents() {
         const card = this.topCard;
 
         card.removeAllListeners();
 
-        card.setDraggable(true);
-        
         card.on('dragstart', () => {
 
-            this.setDraggable(false);
+            if (card.type !== 'deck') return;
+
             this.scene.playStack.setDropZone(true);
             this.scene.handStack.setDropZone(true);
-            this.count(-1);
 
-            this.scene.socket.emit('drawRequest', {code: this.scene.code}, (key) => {
+            this.setDraggable(false);
 
-                if (key == 11) {
-                    this.scene.playStack.setDropZone(false);
-                }
+            if (!this.drawedCard) {
+                this.drawedCard = this.pop();
+                this.count();
 
-                card.flip(true)
-                    .setData('key', key)
-                    .setDepth(1);
+                this.scene.socket.emit('drawRequest', {code: this.scene.code}, (key) => {
 
-                this.setDraggable(false);
-            });
+                    if (key === 11) {
+                        this.scene.playStack.setDropZone(false);
+                    }
+
+                    card.key = key
+
+                    card.flip(true)
+                        .setDepth(1);
+                });
+            }
 
         });
 
         card.on('drag', (pointer, dragX, dragY) => {
+
+            if (card.type !== 'deck') return;
 
             card.setPosition(dragX, dragY);
 
         });
 
         card.on('dragenter', (pointer, gameObject, dropZone) => {
+
+            if (card.type !== 'deck') return;
 
             this.dropped = true;
 
@@ -65,6 +79,8 @@ export class DeckStack {
 
         card.on('dragleave', (pointer, gameObject, dropZone) => {
 
+            if (card.type !== 'deck') return;
+
             this.dropped = false;
 
             gameObject.clearTint();
@@ -74,49 +90,47 @@ export class DeckStack {
 
         card.on('drop', (pointer, gameObject, dropZone) => {
 
+            if (card.type !== 'deck') return;
+
             gameObject.clearTint();
             card.setAlpha(1);
             card.setDepth(0);
 
-            if (gameObject.getData('type') == 'play') {
+            if (gameObject.type === 'play') {
 
-                const key = card.getData('key');
+                const key = card.key;
 
                 this.scene.socket.emit('playRequest', { code: this.scene.code, card: key });
-                this.scene.playStack.play(this.pop());
+                this.scene.playStack.play(card);
 
                 if (key <= 4) {
                     this.scene.socket.emit('turnEnd', { code: this.scene.code });
                 } else {
                     this.scene.skip.setVisible(true);
 
-                    if (key == 5 || key == 6) {
+                    if (key === 5 || key === 6) {
                         this.scene.peeks.self = 1;
                         this.scene.waitingPeek = true;
-                    } else if (key == 7 || key == 8) {
+                    } else if (key === 7 || key === 8) {
                         this.scene.peeks.alien = 1;
                         this.scene.waitingPeek = true;
-                    } else if (key == 9) {
+                    } else if (key === 9) {
                         this.scene.trade = true;
                         this.scene.waitingTrade = true;
-                    } else if (key == 10) {
+                    } else if (key === 10) {
                         this.scene.peeks.self = 1;
                         this.scene.peeks.alien = 1;
                         this.scene.peekTrade = true;
                         this.scene.waitingTrade = true;
                     }
-                } 
+                }
 
-                this.setDraggable(false);
+            } else if (gameObject.type === 'hand') {
 
-            } else if (gameObject.getData('type') == 'hand') {
-
-                this.scene.socket.emit('swapRequest', { code: this.scene.code, i: gameObject.getData('i'), j: gameObject.getData('j') }, (key) => {
-                    this.scene.playStack.play(
-                        this.scene.handStack.swap(
-                            this.pop(), gameObject.getData('i'), gameObject.getData('j')
-                        ).setData('key', key)
-                    );
+                this.scene.socket.emit('swapRequest', { code: this.scene.code, i: gameObject.i, j: gameObject.j }, (key) => {
+                    const swapped = this.scene.handStack.swap(this.pop(), gameObject.i, gameObject.j);
+                    swapped.key = key;
+                    this.scene.playStack.play(swapped);
                 });
 
                 this.scene.socket.emit('turnEnd', { code: this.scene.code });
@@ -126,8 +140,6 @@ export class DeckStack {
 
         card.on('dragend', () => {
 
-            this.setDragEvents();
-            this.setDraggable(false);
             this.scene.playStack.setDropZone(false);
             this.scene.handStack.setDropZone(false);
 
@@ -135,9 +147,7 @@ export class DeckStack {
                 this.dropped = false;
 
             } else {
-                card.flip(false).back(() => {
-                    this.setDraggable(true);
-                });
+                card.flip(false).back();
             }
 
         });
@@ -145,8 +155,8 @@ export class DeckStack {
 
     push(card) {
 
-        card.setData('type', 'deck')
-            .setData('key', null);
+        card.type = 'deck';
+        card.key = null;
 
         if (this.topCard) {
             this.topCard
@@ -200,8 +210,8 @@ export class DeckStack {
                 duration: 200,
                 ease: 'Quart.out',
                 onUpdate: () => {
-                    card.setData('x', deckConfig.X + (i - (this.array.length - 1) / 2) * pos.Y(0.05))
-                        .setData('y', deckConfig.Y + ((this.array.length - 1) / 2 - i) * pos.Y(0.05));
+                    card.oX = deckConfig.X + (i - (this.array.length - 1) / 2) * pos.Y(0.05);
+                    card.oY = deckConfig.Y + ((this.array.length - 1) / 2 - i) * pos.Y(0.05);
                 },
                 onComplete: () => {
                     card.flip(false)
@@ -217,7 +227,7 @@ export class DeckStack {
     }
 
     count(delta = 0) {
-        this.counter.setText(parseInt(this.array.length) + delta);
+        this.counter.setText(this.array.length + delta);
     }
 
     setDraggable(bool) {

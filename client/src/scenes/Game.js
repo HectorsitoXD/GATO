@@ -139,7 +139,9 @@ export class Game extends Phaser.Scene {
             const i = data.i;
             const j = data.j;
 
-            this.playStack.play(this.handStacks[id].pop(i, j).setData('key', card));
+            const popped = this.handStacks[id].pop(i, j);
+            popped.key = card
+            this.playStack.play(popped);
 
         });
 

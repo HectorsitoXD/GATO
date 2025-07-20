@@ -20,9 +20,10 @@ export class PlayStack {
         this.bottomCard = this.array[this.array.length - 2];
 
         this.topCard.setDraggable(false)
-            .setData('type', 'play')
-            .setData('scale', cardConfig.SCALE)
             .setDepth(1);
+
+        this.topCard.type = 'play';
+        this.topCard.oScale = cardConfig.SCALE;
 
         if (this.bottomCard) {
             this.bottomCard.off()
@@ -44,11 +45,7 @@ export class PlayStack {
             ease: 'Quart.out',
             onComplete: () => {
                 
-                if (card.peeking) {
-                    card.dontFlipAfterPeek = true;
-                } else {
-                    card.flip(true);
-                }
+                card.flip(true);
 
                 card.setDraggable(true)
                     .setDepth(0);
@@ -59,7 +56,9 @@ export class PlayStack {
     }
     
     drawPlay(key) {
-        this.play(this.scene.deckStack.pop().setData('key', key));
+        const card = this.scene.deckStack.pop();
+        card.key = key;
+        this.play(card);
     }
 
     reshuffle() {
@@ -68,14 +67,14 @@ export class PlayStack {
 
         let len = deck.length;
         for (let i = 0; i < deck.length; i++) {
-            if (deck[i].getData('key') == 11) {
+            if (deck[i].key == 11) {
                 len --;
             }
         }
 
         for (let i = 0; i < len; i++) {
             const card = deck.pop();
-            if (card.getData('key') == 11) {
+            if (card.key == 11) {
                 card.tween({
                         x: deckConfig.CAT_X[this.cats],
                         y: deckConfig.CAT_Y[this.cats],
@@ -99,9 +98,9 @@ export class PlayStack {
 
         card.on('dragstart', () => {
 
-            card.setDepth(1)
-                .setData('x', card.x)
-                .setData('y', card.y);
+            card.setDepth(2);
+            card.oX = card.x;
+            card.oY = card.y;
 
         });
 
@@ -122,8 +121,7 @@ export class PlayStack {
     }
 
     setDefaultCard() {
-        this.topCard = new Card(this.scene, playConfig.X, playConfig.Y, cardConfig.SCALE, null, false)
-            .setData('type', 'play');
+        this.topCard = new Card(this.scene, playConfig.X, playConfig.Y, cardConfig.SCALE, null, 'play', false);
     }
 
     setDropZone(bool) {

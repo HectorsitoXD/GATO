@@ -196,9 +196,7 @@ io.on('connection', (socket) => {
 
   socket.on('drawRequest', (data, callback) => {
 
-    const deck = rooms[data.code].deck;
-
-    callback(deck[deck.length - 1]);
+    callback(pop(data.code));
 
   });
 

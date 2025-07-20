@@ -6,14 +6,13 @@ export class HandStack {
     constructor(scene, id, idx, maxIdx) {
         this.scene = scene;
         this.id = id;
-        this.type = id == scene.socket.id ? 'self' : 'alien';
+        this.type = id === scene.socket.id ? 'self' : 'alien';
 
         this.array = [];
-        this.length = 0;
         this.x = handConfig.X[maxIdx][idx];
         this.y = handConfig.Y[maxIdx][idx];
-        this.scale = this.type == 'self' ? cardConfig.SCALE : cardConfig.ALIEN_SCALE;
-        this.margin = this.type == 'self' ? handConfig.MARGIN : handConfig.ALIEN_MARGIN;
+        this.scale = this.type === 'self' ? cardConfig.SCALE : cardConfig.ALIEN_SCALE;
+        this.margin = this.type === 'self' ? handConfig.MARGIN : handConfig.ALIEN_MARGIN;
 
         for (let i = 0; i < handConfig.ROWS; i ++) {
             this.array.push([]);
@@ -28,11 +27,13 @@ export class HandStack {
 
         card.on('pointerdown', () => {
 
+            if (card.type !== 'hand') return;
+
             if (this.scene.peeks[this.type] && !this.scene.peekedCards.includes(card)) {
 
                 this.scene.peeks[this.type] --;
 
-                this.scene.socket.emit('peekRequest', { code: this.scene.code, id: this.id, i: card.getData('i'), j: card.getData('j') }, (key) => {
+                this.scene.socket.emit('peekRequest', { code: this.scene.code, id: this.id, i: card.i, j: card.j }, (key) => {
                     card.peek(key);
                 });
 
@@ -43,38 +44,35 @@ export class HandStack {
                     this.scene.socket.emit('turnEnd', { code: this.scene.code });
                 }
 
-            } else if (this.scene.copy) {
-
-                this.scene.playStack.setDropZone(true);
-
             }
 
         });
 
         card.on('dragstart', () => {
 
+            if (card.type !== 'hand') return;
+
             card.setDepth(1);
             // There is no need to define x and y as those have been defined at this.order()
 
+            if (this.scene.copy && !(this.scene.peekTrade && (this.scene.peekedCards.includes(card) || this.scene.peekedCards.length === 0))) {
+                this.scene.playStack.setDropZone(true);
+
+            }
+
             if (this.scene.trade) {
-                console.log('trading');
 
                 for (const handStack of Object.values(this.scene.handStacks)) {
-                    if (handStack != this) {
-                        console.log('entruing')
+                    if (handStack !== this) {
                         handStack.setDropZone(true);
                     }
                 }
 
             } else if (this.scene.peekTrade) {
 
-                if (this.scene.peekedCards.length == 0 || this.scene.peekedCards.includes(card)) {
-                    this.scene.playStack.setDropZone(false);
-
-                    for (const peekedCard of this.scene.peekedCards) {
-                        if (peekedCard != card) {
-                            peekedCard.setDropZone(true);
-                        }
+                for (const peekedCard of this.scene.peekedCards) {
+                    if (peekedCard !== card) {
+                        peekedCard.setDropZone(true);
                     }
                 }
             }
@@ -83,11 +81,15 @@ export class HandStack {
 
         card.on('drag', (pointer, dragX, dragY) => {
 
+            if (card.type !== 'hand') return;
+
             card.setPosition(dragX, dragY);
 
         });
 
         card.on('dragenter', (pointer, gameObject, dropZone) => {
+
+            if (card.type !== 'hand') return;
 
             card.dropped = true;
 
@@ -98,6 +100,8 @@ export class HandStack {
 
         card.on('dragleave', (pointer, gameObject, dropZone) => {
 
+            if (card.type !== 'hand') return;
+
             card.dropped = false;
 
             gameObject.clearTint();
@@ -107,34 +111,36 @@ export class HandStack {
 
         card.on('drop', (pointer, gameObject, dropZone) => {
 
+            if (card.type !== 'hand') return;
 
             gameObject.clearTint();
             card.setAlpha(1)
 
-            if (gameObject.getData('type') == 'play') {
+            if (gameObject.type === 'play') {
                 
                 this.scene.copy = false;
 
-                this.scene.socket.emit('copyRequest', { code: this.scene.code, id: this.id, i: card.getData('i'), j: card.getData('j') }, (key) => {
-                    this.scene.playStack.play(this.pop(card.getData('i'), card.getData('j')).setData('key', key));
+                this.scene.socket.emit('copyRequest', { code: this.scene.code, id: this.id, i: card.i, j: card.j }, (key) => {
+                    card.key = key;
+                    this.scene.playStack.play(this.pop(card.i, card.j));
                 });
 
-            } else if (gameObject.getData('type') == 'hand') {
+            } else if (gameObject.type === 'hand') {
 
                 this.scene.socket.emit('tradeRequest', { 
                     code: this.scene.code, 
-                    traderId: card.getData('id'), 
-                    tradedId: gameObject.getData('id'),
-                    traderI: card.getData('i'),
-                    tradedI: gameObject.getData('i'),
-                    traderJ: card.getData('j'),
-                    tradedJ: gameObject.getData('j')
+                    traderId: card.id, 
+                    tradedId: gameObject.id,
+                    traderI: card.i,
+                    tradedI: gameObject.i,
+                    traderJ: card.j,
+                    tradedJ: gameObject.j
                 });
 
-                const id = gameObject.getData('id');
-                const i = gameObject.getData('i');
-                const j = gameObject.getData('j');
-                this.swap(gameObject, card.getData('i'), card.getData('j'));
+                const id = gameObject.id;
+                const i = gameObject.i;
+                const j = gameObject.j;
+                this.swap(gameObject, card.i, card.j);
                 this.scene.handStacks[id].swap(card, i, j);
 
                 if (this.scene.waitingTrade) {
@@ -157,7 +163,6 @@ export class HandStack {
             if (card.dropped) {
                 card.dropped = false;
             } else {
-                console.log('backing')
                 card.back(); 
             }
         });
@@ -167,17 +172,17 @@ export class HandStack {
         this.add(this.scene.deckStack.pop(), i);
     }
 
-    add(card, i) {
-        this.length += 1;
-
-        card.setData('key', null)
-            .setData('type', 'hand')
-            .setData('scale', this.scale)
-            .setData('id', this.id)
-            .setDepth(0);
+    add(card, i, onCompleteOrdering = () => {}) {
+        card.type = 'hand';
+        card.oScale = this.scale;
+        card.id = this.id;
+        
+        card.setDepth(0);
 
         this.array[i].push(card);
-        this.order();
+        this.order(() => {
+            card.flip(false, false, onCompleteOrdering.bind(this));
+        });
 
         this.setDragEvents(card);
     }
@@ -185,14 +190,16 @@ export class HandStack {
     swap(card, i, j) {
         const current = this.array[i][j];
 
-        card.setData('key', null)
-            .setData('type', 'hand')
-            .setData('scale', this.scale)
-            .setData('id', this.id)
-            .setDepth(0);
+        card.type = 'hand';
+        card.oScale = this.scale;
+        card.id = this.id;
+        
+        card.setDepth(0);
 
         this.array[i][j] = card;
-        this.order();
+        this.order(() => {
+            card.flip(false)
+        });
 
         this.setDragEvents(card);
 
@@ -200,7 +207,9 @@ export class HandStack {
     }
 
     drawSwap(key, i, j) {
-        this.scene.playStack.play(this.swap(this.scene.deckStack.pop(), i, j).setData('key', key));
+        const card = this.swap(this.scene.deckStack.pop(), i, j);
+        card.key = key;
+        this.scene.playStack.play(card);
     }
 
     pop(i, j) {
@@ -215,7 +224,7 @@ export class HandStack {
         card.highlight(this.scene.players[id].color);
     }
 
-    order() {
+    order(onComplete = () => {}) {
         let y = this.y - (handConfig.ROWS * cardConfig.SIZE * this.scale + (handConfig.ROWS - 1) * this.margin ) / 2 + cardConfig.SIZE * this.scale / 2;
         for (let i = 0; i < handConfig.ROWS; i ++) {
 
@@ -224,9 +233,10 @@ export class HandStack {
 
                 const card = this.array[i][j]
 
-                card.setData('i', i)
-                    .setData('j', j)
-                    .setDepth(1);
+                card.i = i;
+                card.j = j;
+                
+                card.setDepth(1);
 
                 card.tween({
                     scaleX: this.scale,
@@ -241,12 +251,12 @@ export class HandStack {
                     duration: 200,
                     ease: 'Quart.out',
                     onUpdate: () => {
-                        card.setData('x', x + j * (cardConfig.SIZE * this.scale + this.margin))
-                            .setData('y', y + i * (cardConfig.SIZE * this.scale + this.margin));
+                        card.oX = x + j * (cardConfig.SIZE * this.scale + this.margin);
+                        card.oY = y + i * (cardConfig.SIZE * this.scale + this.margin);
                     },
                     onComplete: () => {
-                        card.flip(false)
-                            .setDepth(0);
+                        card.setDepth(0);
+                        onComplete.call(this);
                     }
                 });
             }

@@ -2,20 +2,32 @@ import { pos, cardConfig } from './Config.js'
 
 export class Card extends Phaser.GameObjects.Sprite {
 
-    constructor(scene, x, y, scale, key, flip) {
+    constructor(scene, x, y, scale, key, type, flip) {
         super(scene, x, y, 'cards', flip ? key : 12)
             .setScale(scale)
-            .setInteractive()
-            .setData({
-                key,
-                scale
-            });
+            .setInteractive();
+
+        this.key = key;
+        this.oScale = scale;
+        this.type = type;
 
         scene.add.existing(this);
+
+        this.tweenQueue = [];
     }
 
-    tween(data) {
+    tween(data, wait = false) {
         if (!this.scene || !this.scene.tweens) return;
+
+        // If already tweening, add to queue and return
+        if (this.tweening && wait) {
+            console.log(this.tweenQueue);
+            console.log('adding');
+            this.tweenQueue.push(data);
+            return;
+        }
+
+        this.tweening = true;
 
         // Wrap callbacks to check scene existence
         const wrapCallback = (cb) => {
@@ -25,22 +37,41 @@ export class Card extends Phaser.GameObjects.Sprite {
             };
         };
 
-        // Clone data to avoid mutating the original object
         if (!data.targets) {
             data.targets = this;
         }
-        const tweenData = data;
 
-        if (tweenData.onComplete) tweenData.onComplete = wrapCallback(tweenData.onComplete);
-        if (tweenData.onUpdate) tweenData.onUpdate = wrapCallback(tweenData.onUpdate);
-        if (tweenData.onYoyo) tweenData.onYoyo = wrapCallback(tweenData.onYoyo);
-        if (tweenData.onRepeat) tweenData.onRepeat = wrapCallback(tweenData.onRepeat);
+        const onComplete = data.onComplete;
 
-        this.scene.tweens.add(tweenData);
+        data.onComplete = wrapCallback(() => {
+            if (onComplete) {
+                onComplete.call(this);
+            }
+
+            this.tweening = false;
+
+            if (this.tweenQueue.length > 0) {
+                this.tween(this.tweenQueue.shift());
+            }
+        });
+
+        if (data.onUpdate) data.onUpdate = wrapCallback(data.onUpdate);
+        if (data.onYoyo) data.onYoyo = wrapCallback(data.onYoyo);
+        if (data.onRepeat) data.onRepeat = wrapCallback(data.onRepeat);
+
+        this.scene.tweens.add(data);
     }
 
-    countween(data) {
+    countween(data, wait = false) {
         if (!this.scene || !this.scene.tweens) return;
+
+        // If already countweening, add to queue and return
+        if (this.tweening && wait) {
+            this.tweenQueue.push(data);
+            return;
+        }
+
+        this.tweening = true;
 
         // Wrap callbacks to check scene existence
         const wrapCallback = (cb) => {
@@ -50,31 +81,47 @@ export class Card extends Phaser.GameObjects.Sprite {
             };
         };
 
-        // Clone data to avoid mutating the original object
-        const tweenData = { ...data };
+        const onComplete = data.onComplete;
 
-        if (tweenData.onComplete) tweenData.onComplete = wrapCallback(tweenData.onComplete);
-        if (tweenData.onUpdate) tweenData.onUpdate = wrapCallback(tweenData.onUpdate);
-        if (tweenData.onYoyo) tweenData.onYoyo = wrapCallback(tweenData.onYoyo);
-        if (tweenData.onRepeat) tweenData.onRepeat = wrapCallback(tweenData.onRepeat);
+        data.onComplete = wrapCallback(() => {
+            if (onComplete) {
+                onComplete.call(this);
+            }
 
-        this.scene.tweens.addCounter(tweenData);
+            this.tweening = false;
+
+            if (this.tweenQueue.length > 0) {
+                this.tween(this.tweenQueue.shift());
+            }
+        });
+
+        if (data.onUpdate) data.onUpdate = wrapCallback(data.onUpdate);
+        if (data.onYoyo) data.onYoyo = wrapCallback(data.onYoyo);
+        if (data.onRepeat) data.onRepeat = wrapCallback(data.onRepeat);
+
+        this.scene.tweens.addCounter(data);
     }
 
-    flip(bool, onComplete = () => {}) {
-        if (bool == (this.frame.name == 12)) {
+    flip(bool, onComplete = () => {}, peek = false) {
+        if (this.peeking && !peek) this.cancelPeek = true;
+
+        if ((bool === (this.frame.name === 12))) {
+            this.flipping = true;
             this.tween({
                 scaleX: 0,
                 duration: 100,
                 ease: 'Sine.in',
                 onComplete: () => {
-                    this.setFrame(bool ? this.getData('key') : 12);
+                    this.setFrame(bool ? this.key : 12);
                     this.tween({
                         targets: this,
-                        scaleX: this.getData('scale'),
+                        scaleX: this.oScale,
                         duration: 100,
                         ease: 'Sine.out',
-                        onComplete: onComplete
+                        onComplete: () => {
+                            this.flipping = false;
+                            onComplete.call(this);
+                        }
                     });
                 }
             });
@@ -84,48 +131,38 @@ export class Card extends Phaser.GameObjects.Sprite {
 
     peek(key, onComplete = () => {}) {
         this.peeking = true;
-        this.setData('key', key)
-        this.flip(true, async () => {
+        this.key = key;
+        this.flip(true,  () => {
             this.tween({
                 targets: { dummy: 0 },
                 dummy: 1000,
                 duration: 1000,
                 onComplete: () => {
-                    if (this.dontFlipAfterPeek) {
-                        this.dontFlipAfterPeek = false;
-                        this.peeking = false;
-                        onComplete();
-                    } else {
-                        this.flip(false, () => {
+                    if (this.cancelPeek) this.cancelPeek = false;
+                    else {
+                        this.flip(false,  () => {
                             this.peeking = false;
-                            if (this.dontFlipAfterPeek) {
-                                // Whoops, we already flipped back
-                                this.dontFlipAfterPeek = false;
-                                this.flip(true, () => {
-                                    onComplete();
-                                });
-                            } else {
-                                this.setData('key', null);
-                                onComplete();
-                            }
-                        });
+                            onComplete.call(this);
+                        }, true);
                     }
+                    this.peeking = false;
+                    onComplete.call(this);
                 }
             });
-        });
+        }, true);
         return this;
     }
 
     back(onComplete = () => {}) {
         this.disableInteractive(true);
         this.tween({
-            x: this.getData('x'),
-            y: this.getData('y'),
+            x: this.oX,
+            y: this.oY,
             duration: 300,
             ease: 'Back.out',
             onComplete: () => {
                 this.setInteractive(true);
-                onComplete();
+                onComplete.call(this);
             }
         });
         return this;
@@ -146,7 +183,7 @@ export class Card extends Phaser.GameObjects.Sprite {
             },
             onComplete: () => {
                 this.clearTint();
-                onComplete();
+                onComplete.call(this);
             }
         });
         return this;
@@ -178,7 +215,6 @@ export class Card extends Phaser.GameObjects.Sprite {
         if (this.input) {
             this.input.dropZone = bool;
         }
-        console.log('set drop zone for card ' + this.getData('type') + ' ' + this.getData('key') + ' to ' + bool);
         return this;
     }
 }
