@@ -6,13 +6,13 @@ export class HandStack {
     constructor(scene, id, idx, maxIdx) {
         this.scene = scene;
         this.id = id;
-        this.type = id === scene.socket.id ? 'self' : 'alien';
+        this.type = id == scene.socket.id ? 'self' : 'alien';
 
         this.array = [];
         this.x = handConfig.X[maxIdx][idx];
         this.y = handConfig.Y[maxIdx][idx];
-        this.scale = this.type === 'self' ? cardConfig.SCALE : cardConfig.ALIEN_SCALE;
-        this.margin = this.type === 'self' ? handConfig.MARGIN : handConfig.ALIEN_MARGIN;
+        this.scale = this.type == 'self' ? cardConfig.SCALE : cardConfig.ALIEN_SCALE;
+        this.margin = this.type == 'self' ? handConfig.MARGIN : handConfig.ALIEN_MARGIN;
 
         for (let i = 0; i < handConfig.ROWS; i ++) {
             this.array.push([]);
@@ -21,13 +21,12 @@ export class HandStack {
 
     // !! Don't call this method before ordering as card needs to have x and y defined to be able to back() !!
     setDragEvents(card) {
+
         card.removeAllListeners();
 
         card.setDraggable(true);
 
         card.on('pointerdown', () => {
-
-            if (card.type !== 'hand') return;
 
             if (this.scene.peeks[this.type] && !this.scene.peekedCards.includes(card)) {
 
@@ -46,16 +45,13 @@ export class HandStack {
 
             }
 
-        });
-
-        card.on('dragstart', () => {
-
-            if (card.type !== 'hand') return;
+            if (!card.draggable) return;
+            card.dragging = true;
 
             card.setDepth(1);
-            // There is no need to define x and y as those have been defined at this.order()
+            // There is no need to define x and y as those have been defined in this.order()
 
-            if (this.scene.copy && !(this.scene.peekTrade && (this.scene.peekedCards.includes(card) || this.scene.peekedCards.length === 0))) {
+            if (this.scene.copy && !(this.scene.peekTrade && this.scene.peekedCards.includes(card))) {
                 this.scene.playStack.setDropZone(true);
 
             }
@@ -68,7 +64,7 @@ export class HandStack {
                     }
                 }
 
-            } else if (this.scene.peekTrade) {
+            } else if (this.scene.peekTrade && this.scene.peekedCards.includes(card)) {
 
                 for (const peekedCard of this.scene.peekedCards) {
                     if (peekedCard !== card) {
@@ -81,7 +77,7 @@ export class HandStack {
 
         card.on('drag', (pointer, dragX, dragY) => {
 
-            if (card.type !== 'hand') return;
+            if (!card.dragging) return;
 
             card.setPosition(dragX, dragY);
 
@@ -89,7 +85,7 @@ export class HandStack {
 
         card.on('dragenter', (pointer, gameObject, dropZone) => {
 
-            if (card.type !== 'hand') return;
+            if (!card.dragging) return;
 
             card.dropped = true;
 
@@ -100,7 +96,7 @@ export class HandStack {
 
         card.on('dragleave', (pointer, gameObject, dropZone) => {
 
-            if (card.type !== 'hand') return;
+            if (!card.dragging) return;
 
             card.dropped = false;
 
@@ -111,12 +107,12 @@ export class HandStack {
 
         card.on('drop', (pointer, gameObject, dropZone) => {
 
-            if (card.type !== 'hand') return;
+            if (!card.dragging) return;
 
             gameObject.clearTint();
             card.setAlpha(1)
 
-            if (gameObject.type === 'play') {
+            if (gameObject.type == 'play') {
                 
                 this.scene.copy = false;
 
@@ -125,7 +121,7 @@ export class HandStack {
                     this.scene.playStack.play(this.pop(card.i, card.j));
                 });
 
-            } else if (gameObject.type === 'hand') {
+            } else if (gameObject.type == 'hand') {
 
                 this.scene.socket.emit('tradeRequest', { 
                     code: this.scene.code, 
@@ -152,6 +148,9 @@ export class HandStack {
 
 
         card.on('dragend', () => {
+
+            if (!card.dragging) return;
+            card.dragging = false;
 
             this.scene.playStack.setDropZone(false);
             for (const handStack of Object.values(this.scene.handStacks)) {
@@ -206,9 +205,15 @@ export class HandStack {
         return current;
     }
 
-    drawSwap(key, i, j) {
-        const card = this.swap(this.scene.deckStack.pop(), i, j);
+    alienSwap(key, i, j) {
+        const card = this.swap(this.scene.deckStack.alienHoldCard, i, j);
         card.key = key;
+        this.scene.playStack.play(card);
+    }
+
+    alienCopy(key, i, j) {
+        const card = this.pop(i, j);
+        card.key = key
         this.scene.playStack.play(card);
     }
 
@@ -218,10 +223,9 @@ export class HandStack {
         return card;
     }
 
-    highlight(i, j, id) {
+    highlight(i, j, color) {
         const card = this.get(i, j);
-
-        card.highlight(this.scene.players[id].color);
+        card.highlight(color);
     }
 
     order(onComplete = () => {}) {
@@ -239,15 +243,11 @@ export class HandStack {
                 card.setDepth(1);
 
                 card.tween({
-                    scaleX: this.scale,
-                    scaleY: this.scale,
-                    duration: 200,
-                    ease: 'Quart.out'
-                });
-
-                card.tween({
                     x: x + j * (cardConfig.SIZE * this.scale + this.margin),
                     y: y + i * (cardConfig.SIZE * this.scale + this.margin),
+                    scaleX: this.scale,
+                    scaleY: this.scale,
+                    alpha: 1,
                     duration: 200,
                     ease: 'Quart.out',
                     onUpdate: () => {
@@ -277,7 +277,7 @@ export class HandStack {
 
     setDropZone(bool) {
         this.iterate((card) => {
-            card.setDropZone(bool)
+            card.setDropZone(bool);
         });
     }
 }

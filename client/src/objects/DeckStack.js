@@ -1,6 +1,6 @@
 import { Card } from './Card.js'
 import { Button } from './Button.js'
-import { pos, deckConfig, playConfig, cardConfig, uiConfig } from './Config.js'
+import { pos, deckConfig, handConfig, cardConfig, uiConfig } from './Config.js'
 
 export class DeckStack {
 
@@ -15,52 +15,45 @@ export class DeckStack {
         }
 
         this.setDragEvents();
-        this.setDraggable(false);
 
     }
-
-    /*  TODO:
-        Fix drag events, it is important to take the top card out of the array once you click it to avoid
-        cases where the card gets drawn to another player or to the player itself after having been peeked.
-        Currently quite buggy, fix it >:(
-    */
 
     setDragEvents() {
         const card = this.topCard;
 
         card.removeAllListeners();
 
-        card.on('dragstart', () => {
+        card.setDraggable(true);
 
-            if (card.type !== 'deck') return;
+        card.on('pointerdown', () => {
 
-            this.scene.playStack.setDropZone(true);
-            this.scene.handStack.setDropZone(true);
+            if ((!card.draggable) ||
+                (card != this.topCard && card != this.holdCard) ||
+                (card == this.topCard && (!this.scene.myTurn || this.holdCard))) return;
+            card.dragging = true;
 
-            this.setDraggable(false);
-
-            if (!this.drawedCard) {
-                this.drawedCard = this.pop();
+            if (!this.holdCard) {
+                this.holdCard = this.pop();
                 this.count();
 
-                this.scene.socket.emit('drawRequest', {code: this.scene.code}, (key) => {
-
-                    if (key === 11) {
-                        this.scene.playStack.setDropZone(false);
-                    }
-
-                    card.key = key
-
-                    card.flip(true)
-                        .setDepth(1);
+                this.scene.socket.emit('drawRequest', { code: this.scene.code }, (key) => {
+                    card.key = key;
+                    this.scene.playStack.setDropZone(key != 11);
                 });
+            } else {
+                this.scene.playStack.setDropZone(card.key != 11);
             }
+
+            this.scene.handStack.setDropZone(true);
+
+            card.flip(true)
+                .setDepth(1);
 
         });
 
         card.on('drag', (pointer, dragX, dragY) => {
 
-            if (card.type !== 'deck') return;
+            if (!card.dragging) return;
 
             card.setPosition(dragX, dragY);
 
@@ -68,9 +61,9 @@ export class DeckStack {
 
         card.on('dragenter', (pointer, gameObject, dropZone) => {
 
-            if (card.type !== 'deck') return;
+            if (!card.dragging) return;
 
-            this.dropped = true;
+            card.dropped = true;
 
             gameObject.tint(this.scene.players[this.scene.socket.id].color);
             card.setAlpha(uiConfig.SELECTED_ALPHA);
@@ -79,9 +72,9 @@ export class DeckStack {
 
         card.on('dragleave', (pointer, gameObject, dropZone) => {
 
-            if (card.type !== 'deck') return;
+            if (!card.dragging) return;
 
-            this.dropped = false;
+            card.dropped = false;
 
             gameObject.clearTint();
             card.setAlpha(1);
@@ -90,7 +83,7 @@ export class DeckStack {
 
         card.on('drop', (pointer, gameObject, dropZone) => {
 
-            if (card.type !== 'deck') return;
+            if (!card.dragging) return;
 
             gameObject.clearTint();
             card.setAlpha(1);
@@ -128,7 +121,7 @@ export class DeckStack {
             } else if (gameObject.type === 'hand') {
 
                 this.scene.socket.emit('swapRequest', { code: this.scene.code, i: gameObject.i, j: gameObject.j }, (key) => {
-                    const swapped = this.scene.handStack.swap(this.pop(), gameObject.i, gameObject.j);
+                    const swapped = this.scene.handStack.swap(card, gameObject.i, gameObject.j);
                     swapped.key = key;
                     this.scene.playStack.play(swapped);
                 });
@@ -136,15 +129,20 @@ export class DeckStack {
                 this.scene.socket.emit('turnEnd', { code: this.scene.code });
 
             }
+
+            this.holdCard = null;
         });
 
         card.on('dragend', () => {
 
+            if (!card.dragging) return;
+            card.dragging = false;
+
             this.scene.playStack.setDropZone(false);
             this.scene.handStack.setDropZone(false);
 
-            if (this.dropped) {
-                this.dropped = false;
+            if (card.dropped) {
+                card.dropped = false;
 
             } else {
                 card.flip(false).back();
@@ -158,40 +156,33 @@ export class DeckStack {
         card.type = 'deck';
         card.key = null;
 
+        this.array.push(card);
+
         if (this.topCard) {
             this.topCard
                 .off()
-                .removeAllListeners();
+                .removeAllListeners()
         }
 
-        this.array.push(card);
-
         this.topCard = card;
-
         this.setDragEvents();
-        this.setDraggable(this.draggable);
-
         this.count();
-        
         this.order();
 
     }
 
     pop() {
 
-        const card = this.array.pop()
+        const card = this.array.pop();
 
         this.topCard = this.array[this.array.length - 1];
 
         if (this.topCard) {
             this.setDragEvents();
-            this.setDraggable(this.draggable);
         }
 
         this.count();
-
         this.order();
-
         return card;
 
     }
@@ -202,36 +193,43 @@ export class DeckStack {
 
             const card = this.array[i];
 
-            card.setDepth(0);
+            card.oX = deckConfig.X + (i - (this.array.length - 1) / 2) * pos.Y(0.05);
+            card.oY = deckConfig.Y + ((this.array.length - 1) / 2 - i) * pos.Y(0.05);
 
             card.tween({
                 x: deckConfig.X + (i - (this.array.length - 1) / 2) * pos.Y(0.05),
                 y: deckConfig.Y + ((this.array.length - 1) / 2 - i) * pos.Y(0.05),
                 duration: 200,
                 ease: 'Quart.out',
-                onUpdate: () => {
-                    card.oX = deckConfig.X + (i - (this.array.length - 1) / 2) * pos.Y(0.05);
-                    card.oY = deckConfig.Y + ((this.array.length - 1) / 2 - i) * pos.Y(0.05);
-                },
                 onComplete: () => {
-                    card.flip(false)
-                        .setDepth(0);
+                    card.flip(false);
                 }
             });
-
-            if (this.array[i + 1]) {
-                this.array[i + 1].setDepth(1);
-            }
         }
+
+    }
+
+    alienDraw(id) {
+
+        this.alienHoldCard = this.pop();
+
+        this.alienHoldCard.setDepth(1);
+
+        this.alienHoldCard.tween({
+            x: this.scene.handStacks[id].x,
+            y: this.scene.handStacks[id].y - handConfig.LABEL_Y_OFFSET,
+            scaleX: cardConfig.ALIEN_SCALE,
+            scaleY: cardConfig.ALIEN_SCALE,
+            alpha: uiConfig.SELECTED_ALPHA,
+            duration: 200,
+            ease: 'Quart.out'
+        });
+
+        this.alienHoldCard.highlight(this.scene.players[id].color);
 
     }
 
     count(delta = 0) {
         this.counter.setText(this.array.length + delta);
-    }
-
-    setDraggable(bool) {
-        this.draggable = bool;
-        this.topCard.setDraggable(bool);
     }
 }

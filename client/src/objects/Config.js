@@ -44,6 +44,9 @@ export const handConfig = {
     ROWS: 2,
     MARGIN: 10,
     ALIEN_MARGIN: 5,
+    LABEL_W: pos.X(30),
+    LABEL_H: pos.Y(15),
+    LABEL_Y_OFFSET: pos.Y(15)
 };
 
 export const uiConfig = {

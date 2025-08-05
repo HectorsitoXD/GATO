@@ -66,7 +66,8 @@ export class Game extends Phaser.Scene {
             this.turn.setText('Turn ' + (turn + 1));
             this.round.setText('Round ' + (round + 1));
 
-            this.deckStack.setDraggable(id == this.socket.id);
+            this.turnId = id;
+            this.myTurn = id == this.socket.id;
 
             this.copy = true;
             this.peeks = { self: 0, alien: 0 };
@@ -94,7 +95,21 @@ export class Game extends Phaser.Scene {
             const peekedI = data.peekedI;
             const peekedJ = data.peekedJ;
 
-            this.handStacks[peekedId].highlight(peekedI, peekedJ, peekerId);
+            this.handStacks[peekedId].highlight(peekedI, peekedJ, this.players[peekerId].color);
+
+        });
+
+        this.socket.on('draw', (data) => {
+
+            const id = data.id;
+
+            this.deckStack.alienDraw(id);
+
+        });
+
+        this.socket.on('move', (data) => {
+
+            // card.setPosition(data.x, data.y);
 
         });
 
@@ -117,7 +132,9 @@ export class Game extends Phaser.Scene {
 
             const card = data.card;
 
-            this.playStack.drawPlay(card);
+            console.log(card);
+
+            this.playStack.alienPlay(card);
             
         });
 
@@ -128,7 +145,7 @@ export class Game extends Phaser.Scene {
             const i = data.i;
             const j = data.j;
 
-            this.handStacks[id].drawSwap(card, i, j);
+            this.handStacks[id].alienSwap(card, i, j);
 
         });
 
@@ -139,15 +156,13 @@ export class Game extends Phaser.Scene {
             const i = data.i;
             const j = data.j;
 
-            const popped = this.handStacks[id].pop(i, j);
-            popped.key = card
-            this.playStack.play(popped);
+            this.handStacks[id].alienCopy(card, i, j);
 
         });
 
         this.socket.on('reshuffle', (data) => {
 
-            const count = data.count;
+            const count = data.deck;
 
             this.deck.setText('Deck ' + count);
 

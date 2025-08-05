@@ -19,61 +19,46 @@ export class PlayStack {
         this.topCard = this.array[this.array.length - 1];
         this.bottomCard = this.array[this.array.length - 2];
 
-        this.topCard.setDraggable(false)
-            .setDepth(1);
+        card.setDraggable(false);
 
-        this.topCard.type = 'play';
-        this.topCard.oScale = cardConfig.SCALE;
+        card.type = 'play';
+        card.oScale = cardConfig.SCALE;
+        card.setDepth(1);
 
         if (this.bottomCard) {
-            this.bottomCard.off()
-                .removeInteractive()
-                .setDepth(0);
+            this.bottomCard.setDraggable(false);
+            this.bottomCard.setDropZone(false);
         }
-
-        card.tween({
-            scaleX: cardConfig.SCALE,
-            scaleY: cardConfig.SCALE,
-            duration: 200,
-            ease: 'Quart.out'
-        });
 
         card.tween({
             x: playConfig.X,
             y: playConfig.Y,
+            scaleX: cardConfig.SCALE,
+            scaleY: cardConfig.SCALE,
+            alpha: 1,
             duration: 200,
             ease: 'Quart.out',
             onComplete: () => {
-                
-                card.flip(true);
-
-                card.setDraggable(true)
+                card.flip(true)
                     .setDepth(0);
-
                 this.setDragEvents();
             }
         });
     }
     
-    drawPlay(key) {
-        const card = this.scene.deckStack.pop();
+    alienPlay(key) {
+        const card = this.scene.deckStack.alienHoldCard;
         card.key = key;
         this.play(card);
     }
 
     reshuffle() {
 
-        const deck = this.array.splice(0, this.array.length - 2);
-
-        let len = deck.length;
-        for (let i = 0; i < deck.length; i++) {
-            if (deck[i].key == 11) {
-                len --;
-            }
-        }
+        const deck = this.array.splice(1, this.array.length - 2);
+        const len = deck.length;
 
         for (let i = 0; i < len; i++) {
-            const card = deck.pop();
+            const card = deck.shift();
             if (card.key == 11) {
                 card.tween({
                         x: deckConfig.CAT_X[this.cats],
@@ -96,7 +81,10 @@ export class PlayStack {
 
         card.setDraggable(true);
 
-        card.on('dragstart', () => {
+        card.on('pointerdown', () => {
+
+            if (!card.draggable) return;
+            card.dragging = true;
 
             card.setDepth(2);
             card.oX = card.x;
@@ -106,12 +94,17 @@ export class PlayStack {
 
         card.on('drag', (pointer, dragX, dragY) => {
 
+            if (!card.dragging) return;
+
             card.setPosition(dragX, dragY);
 
         });
 
 
         card.on('dragend', () => {
+
+            if (!card.dragging) return;
+            card.dragging = false;
 
             card.setDepth(0);
 
@@ -122,6 +115,7 @@ export class PlayStack {
 
     setDefaultCard() {
         this.topCard = new Card(this.scene, playConfig.X, playConfig.Y, cardConfig.SCALE, null, 'play', false);
+        this.array.push(this.topCard);
     }
 
     setDropZone(bool) {

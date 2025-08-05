@@ -11,9 +11,17 @@ export class Card extends Phaser.GameObjects.Sprite {
         this.oScale = scale;
         this.type = type;
 
-        scene.add.existing(this);
+        this.draggable = false;
+
+        this.dragging = false;
+        this.dropped = false;
 
         this.tweenQueue = [];
+
+        scene.add.existing(this);
+
+        scene.input.setDraggable(this);
+
     }
 
     tween(data, wait = false) {
@@ -102,10 +110,10 @@ export class Card extends Phaser.GameObjects.Sprite {
         this.scene.tweens.addCounter(data);
     }
 
-    flip(bool, onComplete = () => {}, peek = false) {
+    flip(bool, peek = false, onComplete = () => {}) {
         if (this.peeking && !peek) this.cancelPeek = true;
 
-        if ((bool === (this.frame.name === 12))) {
+        if ((bool == (this.frame.name == 12))) {
             this.flipping = true;
             this.tween({
                 scaleX: 0,
@@ -132,7 +140,7 @@ export class Card extends Phaser.GameObjects.Sprite {
     peek(key, onComplete = () => {}) {
         this.peeking = true;
         this.key = key;
-        this.flip(true,  () => {
+        this.flip(true, true, () => {
             this.tween({
                 targets: { dummy: 0 },
                 dummy: 1000,
@@ -140,31 +148,45 @@ export class Card extends Phaser.GameObjects.Sprite {
                 onComplete: () => {
                     if (this.cancelPeek) this.cancelPeek = false;
                     else {
-                        this.flip(false,  () => {
+                        this.flip(false, true, () => {
                             this.peeking = false;
                             onComplete.call(this);
-                        }, true);
+                        });
                     }
                     this.peeking = false;
                     onComplete.call(this);
                 }
             });
-        }, true);
+        });
         return this;
     }
 
-    back(onComplete = () => {}) {
+    back(global = false, onComplete = () => {}) {
         this.disableInteractive(true);
-        this.tween({
+
+        const data = {
             x: this.oX,
             y: this.oY,
             duration: 300,
             ease: 'Back.out',
             onComplete: () => {
-                this.setInteractive(true);
-                onComplete.call(this);
+                if (this.x !== this.oX || this.y !== this.oY) {
+                    this.back(global, onComplete);
+                } else {
+                    this.setInteractive(true);
+                    onComplete.call(this);
+                }
             }
-        });
+        };
+
+        if (global) {
+            data.onUpdate = () => {
+                this.scene.socket.emit('moveRequest', { code: this.scene.code, x: this.x, y: this.y });
+            }
+        }
+
+        this.tween(data);
+
         return this;
     }
 
@@ -200,21 +222,15 @@ export class Card extends Phaser.GameObjects.Sprite {
         const r = Phaser.Math.Interpolation.Linear([white.red, color.red], value);
         const g = Phaser.Math.Interpolation.Linear([white.green, color.green], value);
         const b = Phaser.Math.Interpolation.Linear([white.blue, color.blue], value);
-        const tint = Phaser.Display.Color.GetColor(r, g, b);
-        return tint;
+        return Phaser.Display.Color.GetColor(r, g, b);
     }
 
     setDraggable(bool) {
-        if (this.scene && this.input) {
-            this.scene.input.setDraggable(this, bool);
-        }
-        return this;
+        this.draggable = bool;
     }
 
     setDropZone(bool) {
-        if (this.input) {
-            this.input.dropZone = bool;
-        }
-        return this;
+        if (!this.input) console.log('no input');
+        this.input.dropZone = bool;
     }
 }

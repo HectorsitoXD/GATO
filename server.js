@@ -41,9 +41,10 @@ const DECK = [
   11, 11, 11, 11
 ];
 
+
 const CARDS = 4;
 
-var rooms = {};
+const rooms = {};
 
 io.on('connection', (socket) => {
 
@@ -72,7 +73,8 @@ io.on('connection', (socket) => {
           nick: nick || 'Player ' + (ids.length + 1),
           color: COLORS[ids.length],
           leader: ids.length == 0,
-          hand: [[],[]]
+          hand: [[],[]],
+          hold: null
         }
 
         callback(true, {code, players});
@@ -102,7 +104,7 @@ io.on('connection', (socket) => {
 
       if (id == room.leader) {
         const ids = Object.keys(players);
-        promote(code, ids[0] != id ? ids[0] : ids[1]);
+        promote(code, ids[0] !== id ? ids[0] : ids[1]);
       }
 
       delete players[id];
@@ -114,7 +116,7 @@ io.on('connection', (socket) => {
 
       everyone('playerUpdate', { players }, code);
 
-    };
+    }
   });
 
   socket.on('promoteRequest', (data) => {
@@ -196,7 +198,20 @@ io.on('connection', (socket) => {
 
   socket.on('drawRequest', (data, callback) => {
 
-    callback(pop(data.code));
+    const code = data.code;
+    const player = rooms[code].players[socket.id];
+
+    player.hold = pop(code);
+
+    callback(player.hold);
+
+    everyone('draw', { id: socket.id }, code, socket.id);
+
+  });
+
+  socket.on('moveRequest', (data) => {
+
+    everyone('move', { x: data.x, y: data.y }, data.code, socket.id);
 
   });
 
@@ -205,19 +220,22 @@ io.on('connection', (socket) => {
     const code = data.code;
     const room = rooms[code];
     const players = room.players;
+    const player = players[socket.id];
     const ids = Object.keys(players);
-    const card = pop(code);
+    const card = player.hold;
 
     room.play.push({
       key: card,
       id: socket.id
     });
 
+    player.hold = null;
+
     everyone('play', { card }, code, socket.id);
 
     if (card <= 4) {
       for (const id of ids) {
-        if (id != socket.id && handLength(code, id) == card) {
+        if (id !== socket.id && handLength(code, id) == card) {
           deal(code, id);
         }
       }
@@ -234,13 +252,14 @@ io.on('connection', (socket) => {
     const player = players[socket.id];
     const hand = player.hand;
     const card = hand[i][j];
-    
+
     room.play.push({
       key: card,
       id: socket.id
     });
 
-    hand[i][j] = pop(code);
+    hand[i][j] = player.hold;
+    player.hold = null;
 
     callback(card);
 
@@ -270,11 +289,6 @@ io.on('connection', (socket) => {
       id: socket.id
     });
 
-    console.log(i)
-    console.log(j)
-    console.log(card)
-    console.log(room.players[id].hand)
-
     callback(card);
 
     everyone('copy', { id, card, i, j }, code, socket.id);
@@ -284,15 +298,15 @@ io.on('connection', (socket) => {
     const bottom = play[len - 3];
 
     // Si no és un gat:
-    if (card != 11) {
+    if (card !== 11) {
       // Si t'has equivocat, penca 2:
-      if (!top || card != top.key) {
+      if (!top || card !== top.key) {
         for (let i = 0; i < 2; i ++) {
           await sleep(200);
           deal(code, socket.id);
         }
       // Si no t'has equivocat i la carta és d'un altre, l'altre penca 2:
-      } else if (id != socket.id) {
+      } else if (id !== socket.id) {
         for (let i = 0; i < 2; i ++) {
           await sleep(200);
           deal(code, id);
@@ -301,13 +315,13 @@ io.on('connection', (socket) => {
     // Si ho és:
     } else {
       // Si t'has equivocat, penca 3:
-      if (!top || !bottom || top.key != bottom.key || top.id == socket.id || bottom.id == socket.id) {
+      if (!top || !bottom || top.key !== bottom.key || top.id == socket.id || bottom.id == socket.id) {
         for (let i = 0; i < 3; i ++) {
           await sleep(200);
           deal(code, socket.id);
         }
       // Si no t'has equivocat i la carta és d'un altre, l'altre penca 3:
-      } else if (id != socket.id) {
+      } else if (id !== socket.id) {
         for (let i = 0; i < 3; i ++) {
           await sleep(200);
           deal(code, id);
@@ -383,7 +397,7 @@ function everyone(event, data, code, except = null) {
   const ids = Object.keys(rooms[code].players);
 
   for (const id of ids) {
-    if (id != except) {
+    if (id !== except) {
       io.to(id).emit(event, data);
 
     }
@@ -408,7 +422,7 @@ function shuffle(deck) {
 
     let currentIndex = deck.length;
 
-    while (currentIndex != 0) {
+    while (currentIndex !== 0) {
         let randomIndex = Math.floor(Math.random() * currentIndex);
         currentIndex--;
 
@@ -425,10 +439,13 @@ function reshuffle(code) {
   const room = rooms[code];
   const play = room.play;
 
-  room.deck = shuffle(play.splice(0, play.length - 2));
+  room.deck = shuffle(
+      play.map(card => card.key)
+          .splice(0, play.length - 2)
+  );
 
   const deck = room.deck;
-  const len = deck.length;
+  let len = deck.length;
   for (let i = 0; i < len; i++) {
     if (deck[i] == 11) {
       room.cats += 1;
@@ -443,6 +460,8 @@ function reshuffle(code) {
 }
 
 function deal(code, id) {
+
+  if (handLength(code, id) == 14) return;
 
   const room = rooms[code];
   const players = room.players;
@@ -474,9 +493,10 @@ function pop(code) {
   const deck = room.deck;
   const card = deck.pop();
 
+  console.log(deck.length)
   if (deck.length == 0) {
     reshuffle(code);
-    everyone('reshuffle', { count: room.count.deck, deck: room.deck, cats: room.cats }, code);
+    everyone('reshuffle', { deck: room.count.deck }, code);
   }
 
   return card;
